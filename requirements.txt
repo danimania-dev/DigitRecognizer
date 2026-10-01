@@ -3,3 +3,5 @@ torchvision
 opencv-python
 numpy
 Pillow
+Flask
+flask_cors

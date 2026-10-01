@@ -13,6 +13,7 @@ trans_train = transforms.Compose([
 ])
 
 trans_eval = transforms.Compose([
+    transforms.Resize((28, 28)),
     transforms.Grayscale(num_output_channels = 1),
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
@@ -45,9 +46,15 @@ class Model(nn.Module):
 
         with torch.no_grad():
             result = self(tensor_image) 
-            class_res = torch.argmax(result).item()
+
+            probabilities = torch.softmax(result, dim = 1)
+
+            max_prob, class_res = torch.max(probabilities, dim = 1)
+
+            class_res = class_res.item()
+            max_prob = max_prob.item()
             
-            return class_res
+            return class_res, max_prob
 
 
     def test_model(self, dataset_path):

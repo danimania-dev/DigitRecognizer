@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digit Recognizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-white text-black font-mono flex flex-col items-center py-10 px-5 m-0 selection:bg-black selection:text-white">
+
+    <h1 class="uppercase tracking-[0.2em] mb-5 text-xl font-bold">Predictor</h1>
+
+    <canvas id="drawCanvas" width="280" height="280" class="bg-black cursor-crosshair touch-none mb-5"></canvas>
+
+    <div class="flex gap-2 w-[280px] mb-6">
+      <button id="clearBtn" class="flex-1 p-3 bg-white text-black border-2 border-black font-mono uppercase font-bold cursor-pointer transition-colors duration-75 hover:bg-black hover:text-white focus:outline-none disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black">
+        Clear
+      </button>
+      <button id="predictBtn" class="flex-1 p-3 bg-white text-black border-2 border-black font-mono uppercase font-bold cursor-pointer transition-colors duration-75 hover:bg-black hover:text-white focus:outline-none disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-black">
+        Predict
+      </button>
+    </div>
+
+    <div id="resultContainer" class="text-center w-[280px] pt-6 border-t-2 border-black">
+      <div class="text-xs uppercase tracking-widest font-bold">Result</div>
+      <div id="resultDisplay" class="text-6xl mt-2">-</div>
+      
+      <div id="confidenceDisplay" class="text-sm mt-3 font-bold uppercase hidden tracking-wider"></div>
+      
+      <div id="errorText" class="text-red-600 mt-4 text-sm font-bold uppercase hidden"></div>
+    </div>
+
+    <script>
+    const canvas = document.getElementById('drawCanvas');
+    const ctx = canvas.getContext('2d');
+    const clearBtn = document.getElementById('clearBtn');
+    const predictBtn = document.getElementById('predictBtn');
+    const resultDisplay = document.getElementById('resultDisplay');
+    const confidenceDisplay = document.getElementById('confidenceDisplay');
+    const errorText = document.getElementById('errorText');
+
+    let isDrawing = false;
+    const THICKNESS = 24; 
+
+    function initCanvas() {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = THICKNESS;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+
+    initCanvas();
+
+    clearBtn.addEventListener('click', () => {
+      initCanvas();
+      resultDisplay.innerText = '-';
+      confidenceDisplay.style.display = 'none';
+      errorText.style.display = 'none';
+    });
+
+    function startPosition(e) {
+      isDrawing = true;
+      draw(e);
+    }
+
+    function endPosition() {
+      isDrawing = false;
+      ctx.beginPath(); 
+    }
+
+    function draw(e) {
+      if (!isDrawing) return;
+      e.preventDefault(); 
+
+      let clientX, clientY;
+      if (e.type.includes('touch')) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    }
+
+    canvas.addEventListener('mousedown', startPosition);
+    canvas.addEventListener('mouseup', endPosition);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseout', endPosition);
+
+    canvas.addEventListener('touchstart', startPosition, { passive: false });
+    canvas.addEventListener('touchend', endPosition);
+    canvas.addEventListener('touchmove', draw, { passive: false });
+
+    predictBtn.addEventListener('click', () => {
+      resultDisplay.innerText = '...';
+      confidenceDisplay.style.display = 'none';
+      errorText.style.display = 'none';
+      predictBtn.disabled = true;
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          showError("Canvas extraction failed.");
+          resetBtn();
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', blob, 'drawing.png');
+
+        try {
+          const response = await fetch('http://localhost:5000/predict', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (data.prediction !== undefined) {
+            resultDisplay.innerText = data.prediction;
+            
+            if (data.confidence !== undefined) {
+              let rawConf = String(data.confidence).replace('%', '');
+              let confValue = parseFloat(rawConf);
+              
+              if (confValue <= 1.0 && String(data.confidence).indexOf('%') === -1) {
+                confValue = confValue * 100;
+              }
+
+              confidenceDisplay.innerText = `CONFIDENCE: ${confValue.toFixed(2)}%`;
+              confidenceDisplay.style.display = 'block';
+
+              confidenceDisplay.className = 'text-sm mt-3 font-bold uppercase tracking-wider';
+              
+              if (confValue >= 85) {
+                confidenceDisplay.classList.add('text-green-600');
+              } else if (confValue >= 50) {
+                confidenceDisplay.classList.add('text-amber-500');
+              } else {
+                confidenceDisplay.classList.add('text-red-600');
+              }
+            }
+          } else if (data.error) {
+            throw new Error(data.error);
+          } else {
+            throw new Error("Invalid response.");
+          }
+
+        } catch (error) {
+          console.error(error);
+          resultDisplay.innerText = 'ERR';
+          showError("Connection failed.");
+        } finally {
+          resetBtn();
+        }
+      }, 'image/png');
+    });
+
+    function showError(msg) {
+      errorText.innerText = msg;
+      errorText.style.display = 'block';
+    }
+
+    function resetBtn() {
+      predictBtn.disabled = false;
+    }
+    </script>
+  </body>
+</html>
