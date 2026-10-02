@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from model import Model
 import traceback
@@ -11,6 +11,10 @@ CORS(app)
 model = Model()
 model.load_state_dict(torch.load('trained.pth', weights_only = True))
 model.eval()
+
+@app.route('/')
+def home():
+    return render_template('index.html')
 
 @app.route('/predict', methods=['POST'])
 def predict():
